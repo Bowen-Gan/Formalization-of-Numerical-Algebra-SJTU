@@ -1,0 +1,4 @@
+- SOR.fuscon 文件和Convergence.lean 有部分重叠
+- IsStrictlyDiagonally 文件中axiom不要使用，不要使用:=赋予默认值
+- Jacobi.Defs.lean 文件中的GS定义统一
+- Jacobi.Theorem_4_2_6 文件夹中定义统一

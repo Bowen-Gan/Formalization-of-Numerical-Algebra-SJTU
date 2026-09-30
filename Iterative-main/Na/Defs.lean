@@ -1,0 +1,130 @@
+import Mathlib.LinearAlgebra.Matrix.Block
+import Mathlib.Algebra.Group.Pi.Units
+import Mathlib.Analysis.Matrix
+import Mathlib.Analysis.CStarAlgebra.Matrix
+import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
+import Mathlib.LinearAlgebra.Matrix.IsDiag
+import Mathlib.LinearAlgebra.Matrix.PosDef
+
+open Matrix
+
+noncomputable section Norm
+
+#check Matrix.frobeniusSeminormedAddCommGroup
+abbrev FNorm {α m n} [Fintype m] [Fintype n] [SeminormedAddCommGroup α] : Matrix m n α → ℝ :=
+  fun X => (Matrix.frobeniusSeminormedAddCommGroup).norm X
+
+abbrev LinftyNorm {α m n} [Fintype m] [Fintype n] [SeminormedAddCommGroup α] : Matrix m n α → ℝ :=
+  fun X => (Matrix.linftyOpSeminormedAddCommGroup).norm X
+
+abbrev LoneNorm {α m n} [Fintype m] [Fintype n] [SeminormedAddCommGroup α] : Matrix m n α → ℝ :=
+  fun X => (Matrix.linftyOpSeminormedAddCommGroup).norm Xᵀ
+
+abbrev LtwoNorm {α m n} [Fintype m] [Fintype n] [DecidableEq m] [RCLike α] : Matrix m n α → ℝ :=
+  fun X => (Matrix.instL2OpNormedAddCommGroup).norm Xᵀ
+
+notation:100 "‖" A "‖_F" => FNorm A
+notation:100 "‖" A "‖_∞" => LinftyNorm A
+notation:100 "‖" A "‖₁" => LoneNorm A
+notation:100 "‖" A "‖₂" => LtwoNorm A
+
+def Norm_ofPosDef {n : Type*} [Fintype n] (A : {X : Matrix n n ℝ // Matrix.PosDef X}) : (n → ℝ) → ℝ :=
+  fun x ↦ Real.sqrt (x ⬝ᵥ (A *ᵥ x))
+
+instance Norm_ofPosDef.toNorm {n : Type*} [Fintype n] (A : {X : Matrix n n ℝ // Matrix.PosDef X}) :
+    Norm (n → ℝ) where
+  norm := Norm_ofPosDef A
+
+variable {m n R α} [Fintype m] [Fintype n] [NormedField R] [SeminormedAddCommGroup α] [NormedSpace R α]
+  {X : Matrix m n R}
+
+#check ‖X‖_F
+#check ‖X‖₁
+#check ‖X‖_∞
+
+variable {m' n' : Type*} [Fintype m'] [Fintype n'] [DecidableEq m'] [DecidableEq n'] {X : Matrix m' n' ℝ}
+#check ‖X‖₂
+
+end Norm
+
+noncomputable section Condition_Number
+
+def Matrix.conditionNumber {n : Type*} [Fintype n] [DecidableEq n]
+    (A : Matrix n n ℝ) [Invertible A] : ℝ :=
+  ‖A‖₂ * ‖A⁻¹‖₂
+
+end Condition_Number
+
+section matrix_structure
+
+def Matrix.lowerPart {n α : Type*} [LE n] [DecidableLE n] (X : Matrix n n α) [Zero α] :
+  Matrix n n α := fun i j => if j ≥ i then 0 else X i j
+
+def Matrix.upperPart {n α : Type*} [LE n] [DecidableLE n] (X : Matrix n n α) [Zero α] :
+  Matrix n n α := fun i j => if j ≤ i then 0 else X i j
+
+lemma Matrix.transpose_lowerPart_eq_upperPart
+    {n α : Type*} [LE n] [DecidableLE n] (X : Matrix n n α) [Zero α] :
+    (Matrix.lowerPart X)ᵀ = Matrix.upperPart Xᵀ := by
+  ext i j
+  simp [lowerPart, upperPart]
+
+abbrev Matrix.diagPart {n α : Type*} [DecidableEq n] (X : Matrix n n α) [Zero α] :=
+  Matrix.diagonal (fun i => X i i)
+
+lemma Matrix.part_decompose {n α : Type*} [LinearOrder n] (X : Matrix n n α) [AddZeroClass α] :
+    X = Matrix.lowerPart X + Matrix.upperPart X + Matrix.diagPart X := by
+  ext i j
+  simp only [diagonal, add_apply, lowerPart, ge_iff_le, upperPart, of_apply]
+  split_ifs with h1 h2 h3 h4 h5 h6 h7
+  on_goal 2 => exact absurd (le_antisymm h1 h2) h3
+  on_goal 7 => exact absurd (not_le.mp h1).le h5
+  all_goals simp_all
+
+theorem Matrix.diagnonzero_diagInvertable
+    {n α : Type*} [Fintype n] [DecidableEq n] [Field α] {A : Matrix n n α}
+    (hA : ∀ i, A i i ≠ 0) : IsUnit (Matrix.diagPart A) := by
+  simpa [Matrix.isUnit_diagonal, Pi.isUnit_iff] using hA
+
+theorem Matrix.diagnonzero_diagInvertable'
+    {n α : Type*} [Fintype n] [DecidableEq n] [Field α]
+    (A : {X : Matrix n n α // ∀ i, X i i ≠ 0}) : IsUnit (Matrix.diagPart A.1) :=
+  (A.1).diagnonzero_diagInvertable A.2
+
+end matrix_structure
+
+section iterative_method
+
+def linearsystem.residual {α : Type*} {n : ℕ} [Field α] (A : Matrix (Fin n) (Fin n) α) (b : (Fin n) → α) :
+  (Fin n → α) → (Fin n → α) := fun x ↦ b - (A *ᵥ x)
+
+structure Stationary_iterative {α : Type*} {n : ℕ} [Field α] (x0 : (Fin n) → α) where
+  M : Matrix (Fin n) (Fin n) α
+  g : (Fin n) → α
+
+def Stationary_iterative.x {α : Type*} {n : ℕ} [Field α] {x0 : (Fin n) → α} (self : Stationary_iterative x0) :
+    ℕ → ((Fin n) → α)
+  | 0 => x0
+  | p + 1 => self.M *ᵥ (self.x p) + self.g
+
+lemma Stationary_iterative.x_zero {α : Type*} {n : ℕ} [Field α] {x0 : (Fin n) → α}
+    (self : Stationary_iterative x0) : self.x 0 = x0 := rfl
+
+lemma Stationary_iterative.x_succ {α : Type*} {n : ℕ} [Field α] {x0 : (Fin n) → α}
+    (self : Stationary_iterative x0) (p : ℕ) : self.x (p + 1) = self.M *ᵥ (self.x p) + self.g := rfl
+
+noncomputable def Jacobi {α : Type*} {n : ℕ} [Field α] (A : Matrix (Fin n) (Fin n) α) (hA : ∀ i, A i i ≠ 0)
+    (b : (Fin n) → α) (x0 : (Fin n) → α) : Stationary_iterative x0 :=
+  letI Dinv : Matrix (Fin n) (Fin n) α := (A.diagnonzero_diagInvertable hA).unit.inv
+  {
+    M := Dinv * (A.diagPart - A)
+    g := Dinv *ᵥ b
+  }
+
+variable {α : Type*} {n : ℕ} [Field α] {x0 : (Fin n) → α} (A : Matrix (Fin n) (Fin n) α) (hA : ∀ i, A i i ≠ 0)
+  {b : (Fin n) → α} {x0 : (Fin n) → α}
+
+lemma Jacobi.update (alg := Jacobi A hA b x0) (p : ℕ) :
+    alg.x (p + 1) = alg.M *ᵥ alg.x p + alg.g := rfl
+
+end iterative_method
